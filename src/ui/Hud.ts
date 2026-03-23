@@ -75,7 +75,11 @@ export class Hud {
     this.messageValue = document.createElement("p");
     this.messageValue.className = "hud-message";
 
-    this.element.append(topRow, progress, this.messageValue);
+    const versionLabel = document.createElement("p");
+    versionLabel.className = "hud-version";
+    versionLabel.textContent = `v${__APP_VERSION__}`;
+
+    this.element.append(topRow, progress, this.messageValue, versionLabel);
     this.setVisible(false);
   }
 
