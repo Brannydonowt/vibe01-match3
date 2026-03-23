@@ -1,5 +1,6 @@
 import * as THREE from "three";
 
+import { playMatchPop } from "../audio/matchPop";
 import { TweenQueue } from "./animation/TweenQueue";
 import { BoardModel } from "./board/BoardModel";
 import { BoardRenderer } from "./board/BoardRenderer";
@@ -272,6 +273,7 @@ export class GameScene {
 
   private async runResolutionStep(step: ResolutionStep): Promise<void> {
     if (step.type === "clear") {
+      playMatchPop();
       await this.boardRenderer.animateClear(step.cleared);
     }
 
