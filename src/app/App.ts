@@ -75,8 +75,9 @@ export class App {
   }
 
   private readonly handleResize = (): void => {
-    const { clientWidth, clientHeight } = this.root;
-    this.gameScene.resize(clientWidth, clientHeight);
+    const width = this.root.clientWidth || window.innerWidth;
+    const height = this.root.clientHeight || window.innerHeight;
+    this.gameScene.resize(width, height);
   };
 
   private applyState(state: GameState): void {
