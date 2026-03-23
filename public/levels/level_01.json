@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "id": "level_01",
+  "boardWidth": 8,
+  "boardHeight": 8,
+  "kindCount": 6,
+  "startingMoves": 22,
+  "targetScore": 2800,
+  "layout": null,
+  "blockers": []
+}

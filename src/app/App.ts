@@ -1,4 +1,13 @@
+import { loadLevelManifest, loadLevelSession } from "../game/levels/levelLoader";
+import { sessionForEndlessWave } from "../game/config/endlessConfig";
 import { GameScene } from "../game/GameScene";
+import { defaultMenuSession } from "../game/session/defaultSession";
+import type { SessionDescriptor } from "../game/session/sessionTypes";
+import {
+  loadProgression,
+  recordCampaignProgress,
+  recordEndlessProgress,
+} from "../scores/progressionStorage";
 import { loadScoreSnapshot, recordScore, type ScoreSnapshot } from "../scores/scoreStorage";
 import { GameStateMachine, type GameState } from "../state/GameStateMachine";
 import { EndScreen } from "../ui/EndScreen";
@@ -15,6 +24,10 @@ export class App {
   private readonly sceneLayer: HTMLDivElement;
   private readonly hudResizeObserver: ResizeObserver | null;
   private scoreSnapshot: ScoreSnapshot = loadScoreSnapshot();
+  private progression = loadProgression();
+  private levelIds: string[] = [];
+  private lastSession: SessionDescriptor | null = null;
+  private lastCampaignLevelIndex: number | null = null;
   private currentState: GameState = "menu";
   private animationFrame = 0;
   private lastFrameTime = performance.now();
@@ -43,6 +56,17 @@ export class App {
       onGameFinished: (payload) => {
         this.scoreSnapshot = recordScore(payload.score);
         this.menuScreen.renderProfile(this.scoreSnapshot);
+        if (payload.mode === "campaign" && this.lastCampaignLevelIndex != null) {
+          this.progression = recordCampaignProgress(
+            this.lastCampaignLevelIndex,
+            payload.score,
+            payload.targetScore,
+          );
+          this.menuScreen.setCampaignLevels(this.levelIds, this.progression);
+        }
+        if (payload.mode === "endless" && payload.score >= payload.targetScore) {
+          this.progression = recordEndlessProgress();
+        }
         this.endScreen.showResult({
           score: payload.score,
           milestoneScore: payload.targetScore,
@@ -52,9 +76,13 @@ export class App {
       },
     });
 
-    this.menuScreen = new MenuScreen(() => {
-      this.endScreen.setVisible(false);
-      this.gameScene.startNewGame();
+    this.menuScreen = new MenuScreen({
+      onCampaignLevel: (levelIndex, levelId) => {
+        void this.startCampaignLevel(levelIndex, levelId);
+      },
+      onEndless: () => {
+        void this.startEndless();
+      },
     });
 
     this.hud = new Hud();
@@ -63,7 +91,11 @@ export class App {
     this.endScreen = new EndScreen(
       () => {
         this.endScreen.setVisible(false);
-        this.gameScene.startNewGame();
+        if (this.lastSession) {
+          this.gameScene.startNewGame(this.lastSession);
+        } else {
+          this.gameScene.startNewGame(defaultMenuSession());
+        }
       },
       () => {
         this.endScreen.setVisible(false);
@@ -93,8 +125,43 @@ export class App {
       this.hudResizeObserver = null;
     }
 
+    void this.bootstrapLevels();
     this.handleResize();
     this.loop();
+  }
+
+  private async bootstrapLevels(): Promise<void> {
+    try {
+      const manifest = await loadLevelManifest();
+      this.levelIds = manifest.levels;
+      this.menuScreen.setCampaignLevels(this.levelIds, this.progression);
+    } catch {
+      this.levelIds = [];
+    }
+  }
+
+  private async startCampaignLevel(levelIndex: number, levelId: string): Promise<void> {
+    try {
+      const session = await loadLevelSession(levelId);
+      this.lastSession = session;
+      this.lastCampaignLevelIndex = levelIndex;
+      this.endScreen.setVisible(false);
+      this.gameScene.startNewGame(session);
+    } catch {
+      this.lastSession = defaultMenuSession();
+      this.lastCampaignLevelIndex = null;
+      this.gameScene.startNewGame(this.lastSession);
+    }
+  }
+
+  private startEndless(): void {
+    const wave = this.progression.nextEndlessWave;
+    const seed = (Date.now() ^ (wave * 7919)) >>> 0;
+    const session = sessionForEndlessWave(wave, seed);
+    this.lastSession = session;
+    this.lastCampaignLevelIndex = null;
+    this.endScreen.setVisible(false);
+    this.gameScene.startNewGame(session);
   }
 
   dispose(): void {
@@ -122,6 +189,9 @@ export class App {
     if (onMenu) {
       this.endScreen.setVisible(false);
       this.gameScene.showMenuBoard();
+      if (this.levelIds.length > 0) {
+        this.menuScreen.setCampaignLevels(this.levelIds, this.progression);
+      }
     }
 
     if (state === "playing" || state === "resolving") {

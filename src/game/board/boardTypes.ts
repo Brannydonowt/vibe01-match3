@@ -3,12 +3,24 @@ export interface BoardPosition {
   y: number;
 }
 
+export type SpecialType = "none" | "line_h" | "line_v" | "bomb" | "color_bomb";
+
 export interface Tile {
   id: number;
   kind: number;
+  special: SpecialType;
 }
 
-export type TileGrid = Array<Array<Tile | null>>;
+export interface Blocker {
+  hp: number;
+}
+
+export interface Cell {
+  piece: Tile | null;
+  blocker: Blocker | null;
+}
+
+export type CellGrid = Cell[][];
 
 export interface MatchGroup {
   kind: number;
@@ -32,7 +44,7 @@ export type ResolutionStep =
       type: "swap";
       from: BoardPosition;
       to: BoardPosition;
-      grid: TileGrid;
+      grid: CellGrid;
       valid: boolean;
     }
   | {
@@ -40,16 +52,16 @@ export type ResolutionStep =
       cascade: number;
       groups: MatchGroup[];
       cleared: BoardPosition[];
-      grid: TileGrid;
+      grid: CellGrid;
     }
   | {
       type: "fall";
       cascade: number;
-      grid: TileGrid;
+      grid: CellGrid;
       movements: TileMovement[];
       spawned: SpawnedTile[];
     }
   | {
       type: "reshuffle";
-      grid: TileGrid;
+      grid: CellGrid;
     };

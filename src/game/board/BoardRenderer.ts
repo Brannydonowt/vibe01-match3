@@ -4,44 +4,36 @@ import { TweenQueue } from "../animation/TweenQueue";
 import type { GameConfig } from "../config/gameConfig";
 import type {
   BoardPosition,
+  CellGrid,
   SpawnedTile,
   Tile,
-  TileGrid,
   TileMovement,
 } from "./boardTypes";
 
 type TileMesh = THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+type BlockerMesh = THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
 
 export class BoardRenderer {
   private readonly config: GameConfig;
   private readonly tweens: TweenQueue;
   private readonly group = new THREE.Group();
   private readonly tileGeometry: THREE.PlaneGeometry;
+  private readonly blockerGeometry: THREE.PlaneGeometry;
   private readonly tileMeshes = new Map<number, TileMesh>();
+  private readonly blockerMeshes = new Map<string, BlockerMesh>();
   private readonly textures = new Map<number, THREE.Texture>();
-  private readonly boardBackdrop: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+  private boardBackdrop: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
   private readonly hoverIndicator: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
   private readonly selectionIndicator: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
-  private currentGrid: TileGrid = [];
+  private currentGrid: CellGrid = [];
 
   constructor(scene: THREE.Scene, config: GameConfig, tweens: TweenQueue) {
     this.config = config;
     this.tweens = tweens;
     this.tileGeometry = new THREE.PlaneGeometry(config.tileSize, config.tileSize);
+    this.blockerGeometry = new THREE.PlaneGeometry(config.tileSize * 0.92, config.tileSize * 0.92);
 
-    this.boardBackdrop = new THREE.Mesh(
-      new THREE.PlaneGeometry(
-        this.getBoardWidthWorld() + config.boardPadding * 2,
-        this.getBoardHeightWorld() + config.boardPadding * 2,
-      ),
-      new THREE.MeshBasicMaterial({
-        color: new THREE.Color("#1b0d2c"),
-        transparent: true,
-        opacity: 0.95,
-      }),
-    );
-    this.boardBackdrop.position.z = -0.4;
-    this.group.add(this.boardBackdrop);
+    this.boardBackdrop = this.createBackdrop(config.boardWidth, config.boardHeight);
 
     this.hoverIndicator = new THREE.Mesh(
       new THREE.RingGeometry(0.43, 0.49, 32),
@@ -70,14 +62,44 @@ export class BoardRenderer {
     this.loadGeneratedTextures();
   }
 
+  private createBackdrop(width: number, height: number): THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial> {
+    const mesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(
+        this.getBoardWidthWorldForDims(width, height) + this.config.boardPadding * 2,
+        this.getBoardHeightWorldForDims(width, height) + this.config.boardPadding * 2,
+      ),
+      new THREE.MeshBasicMaterial({
+        color: new THREE.Color("#1b0d2c"),
+        transparent: true,
+        opacity: 0.95,
+      }),
+    );
+    mesh.position.z = -0.4;
+    this.group.add(mesh);
+    return mesh;
+  }
+
+  private refreshBackdrop(): void {
+    const w = this.currentGrid[0]?.length ?? this.config.boardWidth;
+    const h = this.currentGrid.length || this.config.boardHeight;
+    const geom = this.boardBackdrop.geometry as THREE.PlaneGeometry;
+    geom.dispose();
+    this.boardBackdrop.geometry = new THREE.PlaneGeometry(
+      this.getBoardWidthWorldForDims(w, h) + this.config.boardPadding * 2,
+      this.getBoardHeightWorldForDims(w, h) + this.config.boardPadding * 2,
+    );
+  }
+
   getObject3D(): THREE.Object3D {
     return this.group;
   }
 
   getBoardBounds(): { width: number; height: number } {
+    const w = this.currentGrid[0]?.length ?? this.config.boardWidth;
+    const h = this.currentGrid.length || this.config.boardHeight;
     return {
-      width: this.getBoardWidthWorld() + this.config.boardPadding * 2,
-      height: this.getBoardHeightWorld() + this.config.boardPadding * 2,
+      width: this.getBoardWidthWorldForDims(w, h) + this.config.boardPadding * 2,
+      height: this.getBoardHeightWorldForDims(w, h) + this.config.boardPadding * 2,
     };
   }
 
@@ -85,8 +107,14 @@ export class BoardRenderer {
     return Array.from(this.tileMeshes.values());
   }
 
-  setBoard(grid: TileGrid): void {
-    this.currentGrid = grid.map((row) => [...row]);
+  setBoard(grid: CellGrid): void {
+    this.currentGrid = grid.map((row) =>
+      row.map((c) => ({
+        piece: c.piece ? { ...c.piece } : null,
+        blocker: c.blocker ? { ...c.blocker } : null,
+      })),
+    );
+    this.refreshBackdrop();
     this.syncMeshesToGrid();
   }
 
@@ -116,10 +144,12 @@ export class BoardRenderer {
     first: BoardPosition,
     second: BoardPosition,
     valid: boolean,
-    resultGrid?: TileGrid,
+    resultGrid?: CellGrid,
   ): Promise<void> {
-    const firstTile = this.currentGrid[first.y]?.[first.x];
-    const secondTile = this.currentGrid[second.y]?.[second.x];
+    const c1 = this.currentGrid[first.y]?.[first.x];
+    const c2 = this.currentGrid[second.y]?.[second.x];
+    const firstTile = c1?.piece;
+    const secondTile = c2?.piece;
     if (!firstTile || !secondTile) {
       return;
     }
@@ -145,7 +175,12 @@ export class BoardRenderer {
     ]);
 
     if (valid && resultGrid) {
-      this.currentGrid = resultGrid.map((row) => [...row]);
+      this.currentGrid = resultGrid.map((row) =>
+        row.map((c) => ({
+          piece: c.piece ? { ...c.piece } : null,
+          blocker: c.blocker ? { ...c.blocker } : null,
+        })),
+      );
       this.syncMeshesToGrid();
       return;
     }
@@ -170,10 +205,10 @@ export class BoardRenderer {
     this.syncMeshesToGrid();
   }
 
-  async animateClear(cells: BoardPosition[]): Promise<void> {
+  async animateClear(cells: BoardPosition[], gridAfterClear?: CellGrid): Promise<void> {
     const targets = cells
-      .map((cell) => this.currentGrid[cell.y]?.[cell.x])
-      .filter((tile): tile is Tile => tile !== null);
+      .map((cell) => this.currentGrid[cell.y]?.[cell.x]?.piece)
+      .filter((tile): tile is Tile => tile !== null && tile !== undefined);
 
     await Promise.all(
       targets.map((tile) => {
@@ -192,23 +227,36 @@ export class BoardRenderer {
       }),
     );
 
-    for (const cell of cells) {
-      const tile = this.currentGrid[cell.y]?.[cell.x];
-      if (!tile) {
-        continue;
-      }
+    if (gridAfterClear) {
+      this.currentGrid = gridAfterClear.map((row) =>
+        row.map((c) => ({
+          piece: c.piece ? { ...c.piece } : null,
+          blocker: c.blocker ? { ...c.blocker } : null,
+        })),
+      );
+    } else {
+      for (const cell of cells) {
+        const c = this.currentGrid[cell.y]?.[cell.x];
+        const tile = c?.piece;
+        if (!tile) {
+          continue;
+        }
 
-      const mesh = this.tileMeshes.get(tile.id);
-      if (mesh) {
-        this.group.remove(mesh);
-        mesh.material.dispose();
-        this.tileMeshes.delete(tile.id);
+        const mesh = this.tileMeshes.get(tile.id);
+        if (mesh) {
+          this.group.remove(mesh);
+          mesh.material.dispose();
+          this.tileMeshes.delete(tile.id);
+        }
+        if (c) {
+          c.piece = null;
+        }
       }
-      this.currentGrid[cell.y][cell.x] = null;
     }
+    this.syncMeshesToGrid();
   }
 
-  async animateFall(grid: TileGrid, movements: TileMovement[], spawned: SpawnedTile[]): Promise<void> {
+  async animateFall(grid: CellGrid, movements: TileMovement[], spawned: SpawnedTile[]): Promise<void> {
     const animations: Promise<void>[] = [];
 
     for (const movement of movements) {
@@ -253,11 +301,16 @@ export class BoardRenderer {
     }
 
     await Promise.all(animations);
-    this.currentGrid = grid.map((row) => [...row]);
+    this.currentGrid = grid.map((row) =>
+      row.map((c) => ({
+        piece: c.piece ? { ...c.piece } : null,
+        blocker: c.blocker ? { ...c.blocker } : null,
+      })),
+    );
     this.syncMeshesToGrid();
   }
 
-  async animateReshuffle(grid: TileGrid): Promise<void> {
+  async animateReshuffle(grid: CellGrid): Promise<void> {
     const meshes = Array.from(this.tileMeshes.values());
     await Promise.all(
       meshes.map((mesh) =>
@@ -269,7 +322,12 @@ export class BoardRenderer {
       ),
     );
 
-    this.currentGrid = grid.map((row) => [...row]);
+    this.currentGrid = grid.map((row) =>
+      row.map((c) => ({
+        piece: c.piece ? { ...c.piece } : null,
+        blocker: c.blocker ? { ...c.blocker } : null,
+      })),
+    );
     this.syncMeshesToGrid();
 
     await Promise.all(
@@ -289,16 +347,45 @@ export class BoardRenderer {
   }
 
   private syncMeshesToGrid(): void {
-    const activeIds = new Set<number>();
+    const activeTileIds = new Set<number>();
+    const activeBlockerKeys = new Set<string>();
 
-    for (let y = 0; y < this.currentGrid.length; y += 1) {
-      for (let x = 0; x < this.currentGrid[y].length; x += 1) {
-        const tile = this.currentGrid[y][x];
+    const w = this.currentGrid[0]?.length ?? 0;
+    const h = this.currentGrid.length;
+
+    for (let y = 0; y < h; y += 1) {
+      for (let x = 0; x < w; x += 1) {
+        const cell = this.currentGrid[y]![x]!;
+        const key = `${x},${y}`;
+
+        if (cell.blocker) {
+          activeBlockerKeys.add(key);
+          let bMesh = this.blockerMeshes.get(key);
+          if (!bMesh) {
+            bMesh = new THREE.Mesh(
+              this.blockerGeometry,
+              new THREE.MeshBasicMaterial({
+                color: new THREE.Color("#5a3d1a"),
+                transparent: true,
+                opacity: 0.92,
+              }),
+            );
+            bMesh.renderOrder = 2;
+            this.blockerMeshes.set(key, bMesh);
+            this.group.add(bMesh);
+          }
+          bMesh.position.copy(this.gridToWorld({ x, y }));
+          bMesh.position.z = 0.15;
+          bMesh.scale.set(1, 1, 1);
+          bMesh.material.opacity = 0.75 + 0.1 * Math.min(cell.blocker.hp, 3);
+        }
+
+        const tile = cell.piece;
         if (!tile) {
           continue;
         }
 
-        activeIds.add(tile.id);
+        activeTileIds.add(tile.id);
         let mesh = this.tileMeshes.get(tile.id);
         if (!mesh) {
           mesh = this.createTileMesh(tile);
@@ -307,22 +394,52 @@ export class BoardRenderer {
         }
 
         mesh.position.copy(this.gridToWorld({ x, y }));
+        mesh.position.z = 0.05;
         mesh.scale.set(1, 1, 1);
         mesh.material.opacity = 1;
         mesh.material.map = this.textures.get(tile.kind) ?? null;
+        this.applySpecialTint(mesh, tile);
         mesh.material.needsUpdate = true;
         mesh.userData.gridPosition = { x, y };
       }
     }
 
     for (const [tileId, mesh] of this.tileMeshes.entries()) {
-      if (activeIds.has(tileId)) {
+      if (activeTileIds.has(tileId)) {
         continue;
       }
 
       this.group.remove(mesh);
       mesh.material.dispose();
       this.tileMeshes.delete(tileId);
+    }
+
+    for (const [bKey, mesh] of this.blockerMeshes.entries()) {
+      if (activeBlockerKeys.has(bKey)) {
+        continue;
+      }
+
+      this.group.remove(mesh);
+      mesh.material.dispose();
+      this.blockerMeshes.delete(bKey);
+    }
+  }
+
+  private applySpecialTint(mesh: TileMesh, tile: Tile): void {
+    const base = new THREE.Color("#ffffff");
+    switch (tile.special) {
+      case "line_h":
+      case "line_v":
+        mesh.material.color = base.lerp(new THREE.Color("#66ffee"), 0.45);
+        break;
+      case "bomb":
+        mesh.material.color = base.lerp(new THREE.Color("#ffaa33"), 0.5);
+        break;
+      case "color_bomb":
+        mesh.material.color = base.lerp(new THREE.Color("#dd66ff"), 0.55);
+        break;
+      default:
+        mesh.material.color = base;
     }
   }
 
@@ -335,6 +452,7 @@ export class BoardRenderer {
       }),
     );
     mesh.renderOrder = 1;
+    this.applySpecialTint(mesh, tile);
     return mesh;
   }
 
@@ -396,21 +514,23 @@ export class BoardRenderer {
   }
 
   private gridToWorld(position: BoardPosition): THREE.Vector3 {
+    const w = this.currentGrid[0]?.length ?? this.config.boardWidth;
+    const h = this.currentGrid.length || this.config.boardHeight;
     const stride = this.config.tileSize + this.config.tileGap;
-    const width = this.getBoardWidthWorld();
-    const height = this.getBoardHeightWorld();
+    const width = this.getBoardWidthWorldForDims(w, h);
+    const height = this.getBoardHeightWorldForDims(w, h);
     const x = -width / 2 + this.config.tileSize / 2 + position.x * stride;
     const y = height / 2 - this.config.tileSize / 2 - position.y * stride;
     return new THREE.Vector3(x, y, 0);
   }
 
-  private getBoardWidthWorld(): number {
-    return this.config.boardWidth * this.config.tileSize +
-      (this.config.boardWidth - 1) * this.config.tileGap;
+  private getBoardWidthWorldForDims(boardWidth: number, boardHeight: number): number {
+    void boardHeight;
+    return boardWidth * this.config.tileSize + (boardWidth - 1) * this.config.tileGap;
   }
 
-  private getBoardHeightWorld(): number {
-    return this.config.boardHeight * this.config.tileSize +
-      (this.config.boardHeight - 1) * this.config.tileGap;
+  private getBoardHeightWorldForDims(boardWidth: number, boardHeight: number): number {
+    void boardWidth;
+    return boardHeight * this.config.tileSize + (boardHeight - 1) * this.config.tileGap;
   }
 }

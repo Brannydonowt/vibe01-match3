@@ -3,12 +3,14 @@ import type {
   MatchGroup,
   SpawnedTile,
   Tile,
-  TileGrid,
   TileMovement,
+  CellGrid,
 } from "./boardTypes";
+import "./matchRules";
+import { cloneCellGrid, gridDimensions, swapPiecesInGrid } from "./cellGrid";
 
-export function cloneGrid(grid: TileGrid): TileGrid {
-  return grid.map((row) => [...row]);
+export function cloneGrid(grid: CellGrid): CellGrid {
+  return cloneCellGrid(grid);
 }
 
 export function isAdjacent(a: BoardPosition, b: BoardPosition): boolean {
@@ -17,17 +19,19 @@ export function isAdjacent(a: BoardPosition, b: BoardPosition): boolean {
   return dx + dy === 1;
 }
 
-export function swapInGrid(
-  grid: TileGrid,
-  first: BoardPosition,
-  second: BoardPosition,
-): void {
-  const temp = grid[first.y][first.x];
-  grid[first.y][first.x] = grid[second.y][second.x];
-  grid[second.y][second.x] = temp;
+export function swapInGrid(grid: CellGrid, first: BoardPosition, second: BoardPosition): void {
+  swapPiecesInGrid(grid, first, second);
 }
 
-export function findMatchGroups(grid: TileGrid): MatchGroup[] {
+function matchablePieceAt(grid: CellGrid, x: number, y: number): Tile | null {
+  const tile = grid[y]?.[x]?.piece ?? null;
+  if (!tile || tile.special === "color_bomb") {
+    return null;
+  }
+  return tile;
+}
+
+export function findMatchGroups(grid: CellGrid): MatchGroup[] {
   const groups: MatchGroup[] = [];
   const height = grid.length;
   const width = grid[0]?.length ?? 0;
@@ -35,14 +39,14 @@ export function findMatchGroups(grid: TileGrid): MatchGroup[] {
   for (let y = 0; y < height; y += 1) {
     let runStart = 0;
     while (runStart < width) {
-      const tile = grid[y][runStart];
+      const tile = matchablePieceAt(grid, runStart, y);
       let runEnd = runStart + 1;
 
       while (
         tile &&
         runEnd < width &&
-        grid[y][runEnd] &&
-        grid[y][runEnd]?.kind === tile.kind
+        matchablePieceAt(grid, runEnd, y) &&
+        matchablePieceAt(grid, runEnd, y)?.kind === tile.kind
       ) {
         runEnd += 1;
       }
@@ -64,14 +68,14 @@ export function findMatchGroups(grid: TileGrid): MatchGroup[] {
   for (let x = 0; x < width; x += 1) {
     let runStart = 0;
     while (runStart < height) {
-      const tile = grid[runStart][x];
+      const tile = matchablePieceAt(grid, x, runStart);
       let runEnd = runStart + 1;
 
       while (
         tile &&
         runEnd < height &&
-        grid[runEnd][x] &&
-        grid[runEnd][x]?.kind === tile.kind
+        matchablePieceAt(grid, x, runEnd) &&
+        matchablePieceAt(grid, x, runEnd)?.kind === tile.kind
       ) {
         runEnd += 1;
       }
@@ -110,31 +114,48 @@ export function flattenMatches(groups: MatchGroup[]): BoardPosition[] {
   return cells;
 }
 
-export function hasAnyMatches(grid: TileGrid): boolean {
+export function hasAnyMatches(grid: CellGrid): boolean {
   return findMatchGroups(grid).length > 0;
 }
 
+function canSwapPieces(grid: CellGrid, a: BoardPosition, b: BoardPosition): boolean {
+  const ca = grid[a.y]?.[a.x];
+  const cb = grid[b.y]?.[b.x];
+  return Boolean(ca?.piece && !ca.blocker && cb?.piece && !cb.blocker);
+}
+
 export function createsMatchAfterSwap(
-  grid: TileGrid,
+  grid: CellGrid,
   first: BoardPosition,
   second: BoardPosition,
 ): boolean {
+  if (!canSwapPieces(grid, first, second)) {
+    return false;
+  }
   const cloned = cloneGrid(grid);
   swapInGrid(cloned, first, second);
   return hasAnyMatches(cloned);
 }
 
-export function hasLegalMove(grid: TileGrid): boolean {
+export function hasLegalMove(grid: CellGrid): boolean {
   const height = grid.length;
   const width = grid[0]?.length ?? 0;
 
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
-      if (x + 1 < width && createsMatchAfterSwap(grid, { x, y }, { x: x + 1, y })) {
+      if (
+        x + 1 < width &&
+        canSwapPieces(grid, { x, y }, { x: x + 1, y }) &&
+        createsMatchAfterSwap(grid, { x, y }, { x: x + 1, y })
+      ) {
         return true;
       }
 
-      if (y + 1 < height && createsMatchAfterSwap(grid, { x, y }, { x, y: y + 1 })) {
+      if (
+        y + 1 < height &&
+        canSwapPieces(grid, { x, y }, { x, y: y + 1 }) &&
+        createsMatchAfterSwap(grid, { x, y }, { x, y: y + 1 })
+      ) {
         return true;
       }
     }
@@ -143,62 +164,116 @@ export function hasLegalMove(grid: TileGrid): boolean {
   return false;
 }
 
-export function clearMatchedTiles(grid: TileGrid, cells: BoardPosition[]): TileGrid {
-  const cleared = cloneGrid(grid);
+const ORTHO: BoardPosition[] = [
+  { x: 1, y: 0 },
+  { x: -1, y: 0 },
+  { x: 0, y: 1 },
+  { x: 0, y: -1 },
+];
 
-  for (const cell of cells) {
-    cleared[cell.y][cell.x] = null;
+export function damageBlockersAdjacentTo(grid: CellGrid, cells: BoardPosition[]): void {
+  const { width, height } = gridDimensions(grid);
+  const seenBlocker = new Set<string>();
+
+  for (const c of cells) {
+    for (const d of ORTHO) {
+      const nx = c.x + d.x;
+      const ny = c.y + d.y;
+      if (nx < 0 || ny < 0 || nx >= width || ny >= height) {
+        continue;
+      }
+      const cell = grid[ny][nx];
+      if (!cell?.blocker) {
+        continue;
+      }
+      const bk = `${nx},${ny}`;
+      if (seenBlocker.has(bk)) {
+        continue;
+      }
+      seenBlocker.add(bk);
+      cell.blocker.hp -= 1;
+      if (cell.blocker.hp <= 0) {
+        cell.blocker = null;
+      }
+    }
   }
+}
 
-  return cleared;
+export function clearPiecesAt(grid: CellGrid, cells: BoardPosition[]): void {
+  for (const c of cells) {
+    const cell = grid[c.y]?.[c.x];
+    if (cell) {
+      cell.piece = null;
+    }
+  }
 }
 
 export function collapseColumns(
-  grid: TileGrid,
+  grid: CellGrid,
   createTile: () => Tile,
 ): {
-  grid: TileGrid;
+  grid: CellGrid;
   movements: TileMovement[];
   spawned: SpawnedTile[];
 } {
   const height = grid.length;
   const width = grid[0]?.length ?? 0;
-  const nextGrid = grid.map((row) => [...row]);
   const movements: TileMovement[] = [];
   const spawned: SpawnedTile[] = [];
 
   for (let x = 0; x < width; x += 1) {
-    let writeRow = height - 1;
+    type Slot = { y: number; cell: (typeof grid)[0][0] };
+    const slots: Slot[] = [];
+
+    const resolveSlots = (): void => {
+      if (slots.length === 0) {
+        return;
+      }
+
+      const stacked: { fromY: number; tile: Tile }[] = [];
+      for (const slot of slots) {
+        if (slot.cell.piece) {
+          stacked.push({ fromY: slot.y, tile: slot.cell.piece });
+        }
+        slot.cell.piece = null;
+      }
+
+      for (let i = 0; i < slots.length; i += 1) {
+        const slot = slots[i]!;
+        if (i < stacked.length) {
+          const { fromY, tile } = stacked[i]!;
+          slot.cell.piece = tile;
+          if (fromY !== slot.y) {
+            movements.push({
+              tile,
+              from: { x, y: fromY },
+              to: { x, y: slot.y },
+            });
+          }
+        } else {
+          const tile = createTile();
+          slot.cell.piece = tile;
+          const stepsAbove = slots.length - i;
+          spawned.push({
+            tile,
+            from: { x, y: slot.y - stepsAbove },
+            to: { x, y: slot.y },
+          });
+        }
+      }
+    };
 
     for (let y = height - 1; y >= 0; y -= 1) {
-      const tile = nextGrid[y][x];
-      if (!tile) {
-        continue;
+      const cell = grid[y][x];
+      if (cell.blocker) {
+        resolveSlots();
+        slots.length = 0;
+      } else {
+        slots.push({ y, cell });
       }
-
-      if (writeRow !== y) {
-        nextGrid[writeRow][x] = tile;
-        nextGrid[y][x] = null;
-        movements.push({
-          tile,
-          from: { x, y },
-          to: { x, y: writeRow },
-        });
-      }
-
-      writeRow -= 1;
     }
-
-    for (let y = writeRow; y >= 0; y -= 1) {
-      const tile = createTile();
-      nextGrid[y][x] = tile;
-      spawned.push({
-        tile,
-        from: { x, y: y - (writeRow + 1) - 1 },
-        to: { x, y },
-      });
-    }
+    resolveSlots();
   }
 
-  return { grid: nextGrid, movements, spawned };
+  return { grid, movements, spawned };
 }

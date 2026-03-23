@@ -1,11 +1,20 @@
 import type { ScoreSnapshot } from "../scores/scoreStorage";
+import type { ProgressionSnapshot } from "../scores/progressionStorage";
+
+export interface MenuScreenOptions {
+  onCampaignLevel: (levelIndex: number, levelId: string) => void;
+  onEndless: () => void;
+}
 
 export class MenuScreen {
   readonly element: HTMLDivElement;
   private readonly bestValue: HTMLSpanElement;
   private readonly runsValue: HTMLSpanElement;
+  private readonly campaignRow: HTMLDivElement;
+  private readonly options: MenuScreenOptions;
 
-  constructor(onStart: () => void) {
+  constructor(options: MenuScreenOptions) {
+    this.options = options;
     this.element = document.createElement("div");
     this.element.className = "overlay-screen overlay-screen--menu";
 
@@ -29,7 +38,7 @@ export class MenuScreen {
     const copy = document.createElement("p");
     copy.className = "menu-copy";
     copy.textContent =
-      "Swap fast, chain stylish combos, and see how high you can push the score before the set runs out of moves.";
+      "Campaign levels, endless ramp, specials, and crates—swap fast and chase the score.";
 
     const bestCard = this.createProfileCard("Best score");
     const runsCard = this.createProfileCard("Runs played");
@@ -40,19 +49,57 @@ export class MenuScreen {
     profile.className = "menu-profile";
     profile.append(bestCard.card, runsCard.card);
 
-    const button = document.createElement("button");
-    button.className = "primary-button";
-    button.type = "button";
-    button.textContent = "Start Showdown";
-    button.addEventListener("click", onStart);
+    const campaignLabel = document.createElement("p");
+    campaignLabel.className = "menu-section-label";
+    campaignLabel.textContent = "Campaign";
+
+    this.campaignRow = document.createElement("div");
+    this.campaignRow.className = "menu-campaign-row";
+
+    const endlessButton = document.createElement("button");
+    endlessButton.className = "secondary-button";
+    endlessButton.type = "button";
+    endlessButton.textContent = "Endless ramp";
+    endlessButton.addEventListener("click", () => {
+      this.options.onEndless();
+    });
 
     const hint = document.createElement("p");
     hint.className = "panel-hint";
-    hint.textContent = "Portrait-first, score-chasing, and tuned for quick replay loops.";
+    hint.textContent = "Beat the target score to unlock the next stage. Endless tightens the set each wave.";
 
-    panel.append(badge, logo, title, copy, profile, button, hint);
+    panel.append(
+      badge,
+      logo,
+      title,
+      copy,
+      profile,
+      campaignLabel,
+      this.campaignRow,
+      endlessButton,
+      hint,
+    );
     this.element.append(panel);
     this.setVisible(true);
+  }
+
+  setCampaignLevels(levelIds: string[], progression: ProgressionSnapshot): void {
+    this.campaignRow.replaceChildren();
+    levelIds.forEach((id, index) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "primary-button menu-level-button";
+      btn.textContent = `Stage ${index + 1}`;
+      const locked = index > progression.maxUnlockedLevelIndex;
+      btn.disabled = locked;
+      btn.title = locked ? "Clear the previous stage to unlock." : id;
+      btn.addEventListener("click", () => {
+        if (!locked) {
+          this.options.onCampaignLevel(index, id);
+        }
+      });
+      this.campaignRow.append(btn);
+    });
   }
 
   renderProfile(summary: ScoreSnapshot): void {

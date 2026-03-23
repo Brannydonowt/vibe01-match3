@@ -383,6 +383,34 @@ button {
   color: var(--text-main);
 }
 
+.menu-section-label {
+  margin: 0 0 0.45rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-soft);
+}
+
+.menu-campaign-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+  margin: 0 0 0.75rem;
+}
+
+.menu-level-button {
+  min-width: auto;
+  padding: 0.65rem 1rem;
+  font-size: 0.88rem;
+}
+
+.primary-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: grayscale(0.25);
+}
+
 .end-score-hero {
   margin: 0 0 1rem;
   padding: 0.95rem 1rem 1rem;

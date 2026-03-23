@@ -1,15 +1,20 @@
 import * as THREE from "three";
 
 import { playMatchPop } from "../audio/matchPop";
+import type { GameHudState } from "../ui/Hud";
 import { TweenQueue } from "./animation/TweenQueue";
 import { BoardModel } from "./board/BoardModel";
 import { BoardRenderer } from "./board/BoardRenderer";
+import { isSwappable } from "./board/cellGrid";
 import { isAdjacent } from "./board/MatchResolver";
 import { SwapController } from "./board/SwapController";
 import type { BoardPosition, ResolutionStep } from "./board/boardTypes";
 import { gameConfig } from "./config/gameConfig";
 import { PointerInput } from "./input/PointerInput";
-import type { GameHudState } from "../ui/Hud";
+import { createBoardModelForSession } from "./session/createBoardForSession";
+import { defaultMenuSession } from "./session/defaultSession";
+import { randomForSession } from "./session/randomForSession";
+import type { SessionDescriptor } from "./session/sessionTypes";
 
 interface SessionState {
   board: BoardModel;
@@ -17,12 +22,20 @@ interface SessionState {
   movesRemaining: number;
   targetScore: number;
   milestoneReached: boolean;
+  startingMoves: number;
+  descriptor: SessionDescriptor;
 }
 
 interface GameSceneOptions {
   onHudUpdate: (state: GameHudState) => void;
   onPhaseChange: (phase: "playing" | "resolving" | "results") => void;
-  onGameFinished: (payload: { score: number; targetScore: number; movesUsed: number }) => void;
+  onGameFinished: (payload: {
+    score: number;
+    targetScore: number;
+    movesUsed: number;
+    mode: SessionDescriptor["mode"];
+    levelId?: string;
+  }) => void;
 }
 
 export class GameScene {
@@ -81,20 +94,19 @@ export class GameScene {
     this.seedPreviewBoard();
   }
 
-  startNewGame(): void {
+  startNewGame(descriptor: SessionDescriptor): void {
     this.presentationMode = "gameplay";
-    const board = BoardModel.createPlayable(
-      gameConfig.boardWidth,
-      gameConfig.boardHeight,
-      gameConfig.tileKinds.length,
-    );
+    const rng = randomForSession(descriptor);
+    const board = createBoardModelForSession(descriptor, rng);
 
     this.session = {
       board,
       score: 0,
-      movesRemaining: gameConfig.startingMoves,
-      targetScore: gameConfig.targetScore,
+      movesRemaining: descriptor.startingMoves,
+      targetScore: descriptor.targetScore,
       milestoneReached: false,
+      startingMoves: descriptor.startingMoves,
+      descriptor,
     };
 
     this.selectedCell = null;
@@ -104,8 +116,13 @@ export class GameScene {
     this.pointerInput.setEnabled(true);
     this.updateCameraFrame();
     this.options.onPhaseChange("playing");
+
+    const label =
+      descriptor.mode === "endless"
+        ? `Endless wave ${(descriptor.endlessWave ?? 0) + 1}`
+        : descriptor.levelId ?? "Stage";
     this.publishHud(
-      `Run up the biggest score you can in ${this.session.movesRemaining} moves.`,
+      `${label} — ${descriptor.startingMoves} moves. Target ${descriptor.targetScore.toLocaleString()} pts.`,
     );
   }
 
@@ -161,16 +178,18 @@ export class GameScene {
   }
 
   private seedPreviewBoard(): void {
-    const previewBoard = BoardModel.createPlayable(
-      gameConfig.boardWidth,
-      gameConfig.boardHeight,
-      gameConfig.tileKinds.length,
-    );
+    const previewBoard = createBoardModelForSession(defaultMenuSession(), Math.random);
     this.boardRenderer.setBoard(previewBoard.getGrid());
   }
 
   private async handleCellSelection(cell: BoardPosition): Promise<void> {
     if (!this.session) {
+      return;
+    }
+
+    const grid = this.session.board.getGrid();
+    if (!isSwappable(grid, cell)) {
+      this.publishHud("That tile is locked—clear nearby matches to break crates.");
       return;
     }
 
@@ -195,6 +214,13 @@ export class GameScene {
       return;
     }
 
+    if (!isSwappable(grid, this.selectedCell)) {
+      this.selectedCell = cell;
+      this.boardRenderer.setSelected(cell);
+      this.publishHud("Swap needs two free gems.");
+      return;
+    }
+
     const from = this.selectedCell;
     this.selectedCell = null;
     this.boardRenderer.setSelected(null);
@@ -210,7 +236,8 @@ export class GameScene {
     this.pointerInput.setEnabled(false);
     this.options.onPhaseChange("resolving");
 
-    const result = this.swapController.trySwap(this.session.board, first, second);
+    const rng = randomForSession(this.session.descriptor);
+    const result = this.swapController.trySwap(this.session.board, first, second, rng);
     const swapStep = result.steps[0];
 
     if (swapStep?.type === "swap") {
@@ -255,7 +282,9 @@ export class GameScene {
       this.options.onGameFinished({
         score: this.session.score,
         targetScore: this.session.targetScore,
-        movesUsed: gameConfig.startingMoves - this.session.movesRemaining,
+        movesUsed: this.session.startingMoves - this.session.movesRemaining,
+        mode: this.session.descriptor.mode,
+        levelId: this.session.descriptor.levelId,
       });
       return;
     }
@@ -266,15 +295,15 @@ export class GameScene {
       reachedMilestoneThisTurn
         ? `Milestone ${this.session.targetScore} reached. ${this.session.movesRemaining} moves left to push higher.`
         : reshuffled
-        ? "Fresh board dealt. Find the next big pop."
-        : "Board settled. Pick the next spotlight move.",
+          ? "Fresh board dealt. Find the next big pop."
+          : "Board settled. Pick the next spotlight move.",
     );
   }
 
   private async runResolutionStep(step: ResolutionStep): Promise<void> {
     if (step.type === "clear") {
       playMatchPop();
-      await this.boardRenderer.animateClear(step.cleared);
+      await this.boardRenderer.animateClear(step.cleared, step.grid);
     }
 
     if (step.type === "fall") {
