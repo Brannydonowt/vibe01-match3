@@ -1,4 +1,4 @@
-export type GameState = "menu" | "playing" | "resolving" | "win" | "lose";
+export type GameState = "menu" | "playing" | "resolving" | "results";
 
 type Listener = (state: GameState) => void;
 

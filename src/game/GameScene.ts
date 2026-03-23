@@ -8,19 +8,20 @@ import { SwapController } from "./board/SwapController";
 import type { BoardPosition, ResolutionStep } from "./board/boardTypes";
 import { gameConfig } from "./config/gameConfig";
 import { PointerInput } from "./input/PointerInput";
-import type { HudState } from "../ui/Hud";
+import type { GameHudState } from "../ui/Hud";
 
 interface SessionState {
   board: BoardModel;
   score: number;
   movesRemaining: number;
   targetScore: number;
+  milestoneReached: boolean;
 }
 
 interface GameSceneOptions {
-  onHudUpdate: (state: HudState) => void;
-  onPhaseChange: (phase: "playing" | "resolving" | "win" | "lose") => void;
-  onGameFinished: (payload: { won: boolean; score: number; targetScore: number }) => void;
+  onHudUpdate: (state: GameHudState) => void;
+  onPhaseChange: (phase: "playing" | "resolving" | "results") => void;
+  onGameFinished: (payload: { score: number; targetScore: number; movesUsed: number }) => void;
 }
 
 export class GameScene {
@@ -92,6 +93,7 @@ export class GameScene {
       score: 0,
       movesRemaining: gameConfig.startingMoves,
       targetScore: gameConfig.targetScore,
+      milestoneReached: false,
     };
 
     this.selectedCell = null;
@@ -102,7 +104,7 @@ export class GameScene {
     this.updateCameraFrame();
     this.options.onPhaseChange("playing");
     this.publishHud(
-      `Hit ${this.session.targetScore} before the set ends. ${this.session.movesRemaining} moves left.`,
+      `Run up the biggest score you can in ${this.session.movesRemaining} moves.`,
     );
   }
 
@@ -223,6 +225,7 @@ export class GameScene {
 
     this.session.movesRemaining -= 1;
     let reshuffled = false;
+    let reachedMilestoneThisTurn = false;
     this.publishHud(`${this.session.movesRemaining} moves left. Resolving the combo...`);
 
     for (const step of result.steps.slice(1)) {
@@ -239,26 +242,19 @@ export class GameScene {
       }
     }
 
-    if (this.session.score >= this.session.targetScore) {
-      this.pointerInput.setEnabled(false);
-      this.options.onPhaseChange("win");
-      this.publishHud("Target cleared. The crowd is yours.");
-      this.options.onGameFinished({
-        won: true,
-        score: this.session.score,
-        targetScore: this.session.targetScore,
-      });
-      return;
+    if (!this.session.milestoneReached && this.session.score >= this.session.targetScore) {
+      this.session.milestoneReached = true;
+      reachedMilestoneThisTurn = true;
     }
 
     if (this.session.movesRemaining <= 0) {
       this.pointerInput.setEnabled(false);
-      this.options.onPhaseChange("lose");
-      this.publishHud("No moves left. The set ends here.");
+      this.options.onPhaseChange("results");
+      this.publishHud("No moves left. Final score locked in.");
       this.options.onGameFinished({
-        won: false,
         score: this.session.score,
         targetScore: this.session.targetScore,
+        movesUsed: gameConfig.startingMoves - this.session.movesRemaining,
       });
       return;
     }
@@ -266,7 +262,9 @@ export class GameScene {
     this.pointerInput.setEnabled(true);
     this.options.onPhaseChange("playing");
     this.publishHud(
-      reshuffled
+      reachedMilestoneThisTurn
+        ? `Milestone ${this.session.targetScore} reached. ${this.session.movesRemaining} moves left to push higher.`
+        : reshuffled
         ? "Fresh board dealt. Find the next big pop."
         : "Board settled. Pick the next spotlight move.",
     );
@@ -311,13 +309,7 @@ export class GameScene {
 
   private getTopBias(aspect: number): number {
     if (this.presentationMode === "gameplay") {
-      if (aspect < 0.72) {
-        return 2.3;
-      }
-
-      if (aspect < 1) {
-        return 1.2;
-      }
+      return aspect < 0.72 ? 0.18 : 0;
     }
 
     if (aspect < 0.72) {
@@ -332,6 +324,6 @@ export class GameScene {
       return aspect < 0.72 ? 0.55 : 0.15;
     }
 
-    return aspect < 0.72 ? 0.45 : 0;
+    return aspect < 0.72 ? 0.25 : 0.06;
   }
 }

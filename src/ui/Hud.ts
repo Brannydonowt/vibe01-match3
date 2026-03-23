@@ -1,20 +1,25 @@
-export interface HudState {
+export interface GameHudState {
   score: number;
   targetScore: number;
   movesRemaining: number;
   message: string;
 }
 
+export interface HudState extends GameHudState {
+  bestScore: number;
+}
+
 export class Hud {
   readonly element: HTMLDivElement;
   private readonly movesCard: HTMLDivElement;
+  private readonly bestValue: HTMLSpanElement;
   private readonly scoreValue: HTMLSpanElement;
-  private readonly targetValue: HTMLSpanElement;
   private readonly movesValue: HTMLSpanElement;
   private readonly progressFill: HTMLSpanElement;
   private readonly progressLabel: HTMLParagraphElement;
   private readonly messageValue: HTMLParagraphElement;
   private previousScore = 0;
+  private previousBest = 0;
   private previousMoves = 0;
   private previousMessage = "";
 
@@ -22,31 +27,31 @@ export class Hud {
     this.element = document.createElement("div");
     this.element.className = "hud";
 
-    const scoreCard = this.createStatCard("Score");
-    const targetCard = this.createStatCard("Target");
-    const movesCard = this.createStatCard("Moves");
-
-    this.movesCard = movesCard.card;
-    this.scoreValue = scoreCard.value;
-    this.targetValue = targetCard.value;
-    this.movesValue = movesCard.value;
-
     const brand = document.createElement("div");
     brand.className = "hud-brand";
 
     const brandKicker = document.createElement("span");
     brandKicker.className = "hud-brand-kicker";
-    brandKicker.textContent = "Demon Hunter Set";
+    brandKicker.textContent = "Score attack";
 
     const brandTitle = document.createElement("span");
     brandTitle.className = "hud-brand-title";
-    brandTitle.textContent = "Hit the target before the set ends";
+    brandTitle.textContent = "Build the biggest encore score";
 
     brand.append(brandKicker, brandTitle);
 
+    const scoreCard = this.createStatCard("Score");
+    const bestCard = this.createStatCard("Best");
+    const movesCard = this.createStatCard("Moves");
+
+    this.movesCard = movesCard.card;
+    this.bestValue = bestCard.value;
+    this.scoreValue = scoreCard.value;
+    this.movesValue = movesCard.value;
+
     const statRow = document.createElement("div");
     statRow.className = "hud-stats";
-    statRow.append(scoreCard.card, targetCard.card, movesCard.card);
+    statRow.append(scoreCard.card, bestCard.card, movesCard.card);
 
     const topRow = document.createElement("div");
     topRow.className = "hud-top";
@@ -85,6 +90,10 @@ export class Hud {
       this.bump(this.scoreValue, "is-bump");
     }
 
+    if (state.bestScore !== this.previousBest) {
+      this.bump(this.bestValue, "is-bump");
+    }
+
     if (state.movesRemaining !== this.previousMoves) {
       this.bump(this.movesValue, "is-bump");
     }
@@ -93,18 +102,19 @@ export class Hud {
       this.bump(this.messageValue, "is-flash");
     }
 
-    this.scoreValue.textContent = state.score.toString();
-    this.targetValue.textContent = state.targetScore.toString();
+    this.scoreValue.textContent = state.score.toLocaleString();
+    this.bestValue.textContent = state.bestScore.toLocaleString();
     this.movesValue.textContent = state.movesRemaining.toString();
     this.progressFill.style.width = `${Math.min((state.score / Math.max(state.targetScore, 1)) * 100, 100)}%`;
     this.progressLabel.textContent =
       state.score >= state.targetScore
-        ? "Target smashed. Finish the set strong."
-        : `${Math.max(state.targetScore - state.score, 0)} points to go`;
+        ? `Milestone ${state.targetScore} cleared`
+        : `${Math.max(state.targetScore - state.score, 0)} to the stage milestone`;
     this.messageValue.textContent = state.message;
     this.movesCard.classList.toggle("is-critical", state.movesRemaining <= 5);
 
     this.previousScore = state.score;
+    this.previousBest = state.bestScore;
     this.previousMoves = state.movesRemaining;
     this.previousMessage = state.message;
   }
