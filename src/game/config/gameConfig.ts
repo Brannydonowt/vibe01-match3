@@ -1,12 +1,12 @@
 import { balance } from "./balance";
 
 export const tileKinds = [
-  { name: "echo sigil", color: "#52d7ff", assetPath: "assets/sprites/item_blue_01.png" },
-  { name: "foxfire charm", color: "#45dc98", assetPath: "assets/sprites/item_green_01.png" },
-  { name: "heart blade", color: "#ff5f93", assetPath: "assets/sprites/item_red_01.png" },
-  { name: "speaker crest", color: "#ffbf52", assetPath: "assets/sprites/item_gold_01.png" },
-  { name: "moon mic", color: "#b678ff", assetPath: "assets/sprites/item_purple_01.png" },
-  { name: "lightstick idol", color: "#ffe6f4", assetPath: "assets/sprites/item_cream_01.png" },
+  { name: "echo sigil", color: "#52d7ff", assetPath: "assets/sprites/T_KpopChar_02_Blue.png" },
+  { name: "foxfire charm", color: "#45dc98", assetPath: "assets/sprites/T_KpopChar_06.png" },
+  { name: "heart blade", color: "#ff5f93", assetPath: "assets/sprites/T_KpopChar_03_Red.png" },
+  { name: "speaker crest", color: "#ffbf52", assetPath: "assets/sprites/T_KpopChar_04.png" },
+  { name: "moon mic", color: "#b678ff", assetPath: "assets/sprites/T_KpopChar_01_Pink.png" },
+  { name: "lightstick idol", color: "#ffe6f4", assetPath: "assets/sprites/T_KpopChar_05.png" },
 ] as const;
 
 export const gameConfig = {
