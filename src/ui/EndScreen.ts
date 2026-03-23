@@ -10,6 +10,10 @@ export class EndScreen {
     const panel = document.createElement("div");
     panel.className = "panel panel--end";
 
+    const badge = document.createElement("p");
+    badge.className = "panel-badge";
+    badge.textContent = "Set recap";
+
     this.title = document.createElement("h2");
     this.title.className = "end-title";
 
@@ -22,7 +26,7 @@ export class EndScreen {
     const restart = document.createElement("button");
     restart.className = "primary-button";
     restart.type = "button";
-    restart.textContent = "Restart";
+    restart.textContent = "Play Again";
     restart.addEventListener("click", onRestart);
 
     const menu = document.createElement("button");
@@ -32,20 +36,22 @@ export class EndScreen {
     menu.addEventListener("click", onReturnToMenu);
 
     actions.append(restart, menu);
-    panel.append(this.title, this.copy, actions);
+    panel.append(badge, this.title, this.copy, actions);
     this.element.append(panel);
     this.setVisible(false);
   }
 
   showResult(won: boolean, score: number, targetScore: number): void {
-    this.title.textContent = won ? "You Win" : "Out of Moves";
+    this.title.textContent = won ? "Encore Cleared" : "Set Over";
     this.copy.textContent = won
-      ? `You reached ${score} points and cleared the target of ${targetScore}.`
-      : `You finished on ${score} points and needed ${targetScore} to win.`;
+      ? `You lit up the stage with ${score} points and blasted past the ${targetScore} point target.`
+      : `You closed the set on ${score} points and needed ${targetScore} to finish the hunt.`;
     this.setVisible(true);
   }
 
   setVisible(visible: boolean): void {
     this.element.hidden = !visible;
+    this.element.classList.toggle("is-visible", visible);
+    this.element.setAttribute("aria-hidden", String(!visible));
   }
 }

@@ -35,6 +35,9 @@ export class GameScene {
   private readonly options: GameSceneOptions;
   private session: SessionState | null = null;
   private selectedCell: BoardPosition | null = null;
+  private viewportWidth = 1;
+  private viewportHeight = 1;
+  private presentationMode: "menu" | "gameplay" = "menu";
 
   constructor(options: GameSceneOptions) {
     this.options = options;
@@ -77,6 +80,7 @@ export class GameScene {
   }
 
   startNewGame(): void {
+    this.presentationMode = "gameplay";
     const board = BoardModel.createPlayable(
       gameConfig.boardWidth,
       gameConfig.boardHeight,
@@ -95,21 +99,31 @@ export class GameScene {
     this.boardRenderer.setHovered(null);
     this.boardRenderer.setBoard(board.getGrid());
     this.pointerInput.setEnabled(true);
+    this.updateCameraFrame();
     this.options.onPhaseChange("playing");
-    this.publishHud("Reach the target score before your moves run out.");
+    this.publishHud(
+      `Hit ${this.session.targetScore} before the set ends. ${this.session.movesRemaining} moves left.`,
+    );
   }
 
   showMenuBoard(): void {
+    this.presentationMode = "menu";
     this.pointerInput.setEnabled(false);
     this.selectedCell = null;
     this.boardRenderer.setSelected(null);
     this.boardRenderer.setHovered(null);
+    this.updateCameraFrame();
   }
 
   resize(width: number, height: number): void {
+    this.viewportWidth = Math.max(width, 1);
+    this.viewportHeight = Math.max(height, 1);
     this.renderer.setSize(width, height, false);
+    this.updateCameraFrame();
+  }
 
-    const aspect = width / Math.max(height, 1);
+  private updateCameraFrame(): void {
+    const aspect = this.viewportWidth / this.viewportHeight;
     const bounds = this.boardRenderer.getBoardBounds();
     const targetWidth = bounds.width + gameConfig.cameraMargin * 2;
     const targetHeight = bounds.height + gameConfig.cameraMargin * 2;
@@ -123,10 +137,13 @@ export class GameScene {
       cameraHeight = cameraWidth / aspect;
     }
 
+    const topBias = this.getTopBias(aspect);
+    const bottomBias = this.getBottomBias(aspect);
+
     this.camera.left = -cameraWidth / 2;
     this.camera.right = cameraWidth / 2;
-    this.camera.top = cameraHeight / 2;
-    this.camera.bottom = -cameraHeight / 2;
+    this.camera.top = cameraHeight / 2 + topBias;
+    this.camera.bottom = -cameraHeight / 2 - bottomBias;
     this.camera.updateProjectionMatrix();
   }
 
@@ -157,21 +174,21 @@ export class GameScene {
     if (!this.selectedCell) {
       this.selectedCell = cell;
       this.boardRenderer.setSelected(cell);
-      this.publishHud("Choose a neighboring tile to swap.");
+      this.publishHud("Pick a nearby tile to launch the swap.");
       return;
     }
 
     if (this.selectedCell.x === cell.x && this.selectedCell.y === cell.y) {
       this.selectedCell = null;
       this.boardRenderer.setSelected(null);
-      this.publishHud("Selection cleared.");
+      this.publishHud("Selection cleared. Ready for a cleaner line.");
       return;
     }
 
     if (!isAdjacent(this.selectedCell, cell)) {
       this.selectedCell = cell;
       this.boardRenderer.setSelected(cell);
-      this.publishHud("Pick an adjacent tile to make the swap.");
+      this.publishHud("Only adjacent tiles can trade places.");
       return;
     }
 
@@ -200,26 +217,32 @@ export class GameScene {
     if (!result.valid) {
       this.pointerInput.setEnabled(true);
       this.options.onPhaseChange("playing");
-      this.publishHud("That move does not create a match.");
+      this.publishHud("No match from that move. Try setting up a louder combo.");
       return;
     }
 
     this.session.movesRemaining -= 1;
     let reshuffled = false;
+    this.publishHud(`${this.session.movesRemaining} moves left. Resolving the combo...`);
 
     for (const step of result.steps.slice(1)) {
       await this.runResolutionStep(step);
+      if (step.type === "clear") {
+        const scoreGain = this.calculateResolutionScore(step.cleared.length, step.cascade);
+        this.session.score += scoreGain;
+        this.publishHud(this.describeClear(step.cleared.length, step.cascade, scoreGain));
+      }
+
       if (step.type === "reshuffle") {
         reshuffled = true;
+        this.publishHud("Stage remixed. Fresh tiles dropped in.");
       }
     }
-
-    this.session.score += result.scoreDelta;
 
     if (this.session.score >= this.session.targetScore) {
       this.pointerInput.setEnabled(false);
       this.options.onPhaseChange("win");
-      this.publishHud("Target cleared. You win.");
+      this.publishHud("Target cleared. The crowd is yours.");
       this.options.onGameFinished({
         won: true,
         score: this.session.score,
@@ -231,7 +254,7 @@ export class GameScene {
     if (this.session.movesRemaining <= 0) {
       this.pointerInput.setEnabled(false);
       this.options.onPhaseChange("lose");
-      this.publishHud("No moves left.");
+      this.publishHud("No moves left. The set ends here.");
       this.options.onGameFinished({
         won: false,
         score: this.session.score,
@@ -244,8 +267,8 @@ export class GameScene {
     this.options.onPhaseChange("playing");
     this.publishHud(
       reshuffled
-        ? "Fresh board dealt. Keep pushing for the target score."
-        : "Board settled. Pick your next swap.",
+        ? "Fresh board dealt. Find the next big pop."
+        : "Board settled. Pick the next spotlight move.",
     );
   }
 
@@ -271,5 +294,44 @@ export class GameScene {
       movesRemaining: state?.movesRemaining ?? gameConfig.startingMoves,
       message,
     });
+  }
+
+  private calculateResolutionScore(clearedCount: number, cascade: number): number {
+    const comboMultiplier = 1 + cascade * 0.35;
+    return Math.round(clearedCount * 100 * comboMultiplier);
+  }
+
+  private describeClear(clearedCount: number, cascade: number, scoreGain: number): string {
+    if (cascade === 0) {
+      return `Match landed. +${scoreGain} score from ${clearedCount} cleared tiles.`;
+    }
+
+    return `Encore combo x${cascade + 1}. +${scoreGain} score.`;
+  }
+
+  private getTopBias(aspect: number): number {
+    if (this.presentationMode === "gameplay") {
+      if (aspect < 0.72) {
+        return 2.3;
+      }
+
+      if (aspect < 1) {
+        return 1.2;
+      }
+    }
+
+    if (aspect < 0.72) {
+      return 1.1;
+    }
+
+    return 0;
+  }
+
+  private getBottomBias(aspect: number): number {
+    if (this.presentationMode === "menu") {
+      return aspect < 0.72 ? 0.55 : 0.15;
+    }
+
+    return aspect < 0.72 ? 0.45 : 0;
   }
 }

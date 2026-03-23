@@ -81,11 +81,13 @@ export class App {
   };
 
   private applyState(state: GameState): void {
+    this.shell.dataset.state = state;
     const onMenu = state === "menu";
     this.menuScreen.setVisible(onMenu);
     this.hud.setVisible(!onMenu);
 
     if (onMenu) {
+      this.endScreen.setVisible(false);
       this.gameScene.showMenuBoard();
     }
 

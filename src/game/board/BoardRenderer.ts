@@ -35,9 +35,9 @@ export class BoardRenderer {
         this.getBoardHeightWorld() + config.boardPadding * 2,
       ),
       new THREE.MeshBasicMaterial({
-        color: new THREE.Color("#10203f"),
+        color: new THREE.Color("#1b0d2c"),
         transparent: true,
-        opacity: 0.94,
+        opacity: 0.95,
       }),
     );
     this.boardBackdrop.position.z = -0.4;
@@ -46,7 +46,7 @@ export class BoardRenderer {
     this.hoverIndicator = new THREE.Mesh(
       new THREE.RingGeometry(0.43, 0.49, 32),
       new THREE.MeshBasicMaterial({
-        color: new THREE.Color("#9dd7ff"),
+        color: new THREE.Color("#58ddff"),
         transparent: true,
         opacity: 0.8,
       }),
@@ -57,7 +57,7 @@ export class BoardRenderer {
     this.selectionIndicator = new THREE.Mesh(
       new THREE.RingGeometry(0.45, 0.52, 32),
       new THREE.MeshBasicMaterial({
-        color: new THREE.Color("#ffd66e"),
+        color: new THREE.Color("#ff5fd0"),
         transparent: true,
         opacity: 0.95,
       }),

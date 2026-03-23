@@ -21,7 +21,7 @@ export class PointerInput {
   ) {
     this.domElement.addEventListener("pointermove", this.handlePointerMove);
     this.domElement.addEventListener("pointerleave", this.handlePointerLeave);
-    this.domElement.addEventListener("click", this.handleClick);
+    this.domElement.addEventListener("pointerup", this.handlePointerUp);
   }
 
   setEnabled(enabled: boolean): void {
@@ -34,11 +34,15 @@ export class PointerInput {
   dispose(): void {
     this.domElement.removeEventListener("pointermove", this.handlePointerMove);
     this.domElement.removeEventListener("pointerleave", this.handlePointerLeave);
-    this.domElement.removeEventListener("click", this.handleClick);
+    this.domElement.removeEventListener("pointerup", this.handlePointerUp);
   }
 
   private readonly handlePointerMove = (event: PointerEvent): void => {
     if (!this.enabled) {
+      return;
+    }
+
+    if (event.pointerType === "touch") {
       return;
     }
 
@@ -49,7 +53,7 @@ export class PointerInput {
     this.options.onHover(null);
   };
 
-  private readonly handleClick = (event: MouseEvent): void => {
+  private readonly handlePointerUp = (event: PointerEvent): void => {
     if (!this.enabled) {
       return;
     }

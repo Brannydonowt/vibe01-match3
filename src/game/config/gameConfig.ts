@@ -1,12 +1,12 @@
 import { balance } from "./balance";
 
 export const tileKinds = [
-  { name: "sapphire", color: "#4e7cff", assetPath: "assets/sprites/item_blue_01.png" },
-  { name: "emerald", color: "#39c97f", assetPath: "assets/sprites/item_green_01.png" },
-  { name: "ruby", color: "#f35c63", assetPath: "assets/sprites/item_red_01.png" },
-  { name: "sunstone", color: "#ffb14f", assetPath: "assets/sprites/item_gold_01.png" },
-  { name: "amethyst", color: "#b270ff", assetPath: "assets/sprites/item_purple_01.png" },
-  { name: "pearl", color: "#f6e7b6", assetPath: "assets/sprites/item_cream_01.png" },
+  { name: "echo sigil", color: "#52d7ff", assetPath: "assets/sprites/item_blue_01.png" },
+  { name: "foxfire charm", color: "#45dc98", assetPath: "assets/sprites/item_green_01.png" },
+  { name: "heart blade", color: "#ff5f93", assetPath: "assets/sprites/item_red_01.png" },
+  { name: "speaker crest", color: "#ffbf52", assetPath: "assets/sprites/item_gold_01.png" },
+  { name: "moon mic", color: "#b678ff", assetPath: "assets/sprites/item_purple_01.png" },
+  { name: "lightstick idol", color: "#ffe6f4", assetPath: "assets/sprites/item_cream_01.png" },
 ] as const;
 
 export const gameConfig = {
@@ -23,7 +23,7 @@ export const gameConfig = {
   clearDurationMs: 160,
   fallDurationMs: 220,
   cameraMargin: 1.4,
-  backgroundColor: "#08111f",
+  backgroundColor: "#120018",
 };
 
 export type GameConfig = typeof gameConfig;
